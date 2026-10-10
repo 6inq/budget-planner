@@ -1,0 +1,41 @@
+{
+  "budget_type": "business",
+  "title": "2026 Business Budget",
+  "owner": "Northwind Studio LLC",
+  "year": 2026,
+  "start_month": 1,
+  "currency_symbol": "$",
+  "mode": "light",
+  "accent": "teal",
+  "category_chart": "bar",
+  "pay": {
+    "frequency": "semimonthly",
+    "amount": 6800.00,
+    "semimonthly_days": ["15", "last"]
+  },
+  "features": {"savings_goals": true, "debt_tracker": true},
+  "income": [
+    {"name": "Client retainers", "category": "Recurring / Subscriptions", "amount": 14000, "frequency": "monthly"},
+    {"name": "Project work", "category": "Services", "months": [6000, 5000, 9000, 8000, 7000, 12000, 6000, 5000, 9000, 11000, 14000, 8000]},
+    {"name": "Template shop", "category": "Product Sales", "amount": 1200, "frequency": "monthly"}
+  ],
+  "expenses": [
+    {"name": "Studio Lease", "category": "Rent & Facilities", "type": "Fixed", "amount": 2400, "frequency": "monthly", "due_day": 1},
+    {"name": "Software & SaaS", "category": "Software & Subscriptions", "type": "Fixed", "amount": 640, "frequency": "monthly", "due_day": 5},
+    {"name": "Business Insurance", "category": "Insurance", "type": "Fixed", "amount": 1800, "frequency": "quarterly", "month": 1},
+    {"name": "Bookkeeping", "category": "Professional Fees", "type": "Fixed", "amount": 450, "frequency": "monthly", "due_day": 10},
+    {"name": "Ads & Promotion", "category": "Marketing & Advertising", "type": "Variable", "amount": 900, "frequency": "monthly"},
+    {"name": "Freelance Contractors", "category": "Contractors", "type": "Variable", "months": [1500, 1200, 2500, 2000, 1800, 3500, 1500, 1200, 2500, 3000, 4000, 2000]},
+    {"name": "Merchant Fees", "category": "Bank & Merchant Fees", "type": "Variable", "amount": 320, "frequency": "monthly"},
+    {"name": "Equipment Upgrade", "category": "Equipment", "type": "Variable", "amount": 4200, "frequency": "one_time", "month": 3},
+    {"name": "Estimated Taxes", "category": "Taxes & Licenses", "type": "Fixed", "amount": 4500, "frequency": "quarterly", "month": 1}
+  ],
+  "savings_goals": [
+    {"name": "Cash Reserve (3 months)", "target": 45000, "saved": 18000, "target_date": "2026-12-31"},
+    {"name": "Tax Set-Aside", "target": 18000, "saved": 4500, "target_date": "2027-04-15"}
+  ],
+  "debts": [
+    {"name": "Business Credit Card", "balance": 6400, "apr": 19.9, "min_payment": 220},
+    {"name": "Equipment Loan", "balance": 21000, "apr": 7.25, "min_payment": 640}
+  ]
+}

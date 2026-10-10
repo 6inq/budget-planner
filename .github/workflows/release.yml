@@ -1,0 +1,26 @@
+name: Release
+
+# Push a tag like v1.0.0 to publish a release with the claude.ai upload zip attached.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install openpyxl
+      - run: python -m unittest discover -s tests
+      - name: Build skill zip
+        run: cd skills && zip -r ../budget-planner.zip budget-planner -x "*/__pycache__/*"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: budget-planner.zip
+          generate_release_notes: true

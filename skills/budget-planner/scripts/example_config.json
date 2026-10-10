@@ -1,0 +1,43 @@
+{
+  "title": "2026 Budget Planner",
+  "owner": "Alex Rivera",
+  "year": 2026,
+  "start_month": 1,
+  "currency_symbol": "$",
+  "mode": "dark",
+  "accent": "violet",
+  "category_chart": "doughnut",
+  "pay": {
+    "frequency": "biweekly",
+    "amount": 2150.00,
+    "first_payday": "2026-01-09"
+  },
+  "features": {"savings_goals": true, "debt_tracker": true},
+  "income": [
+    {"name": "Freelance design", "category": "Side Income", "amount": 400, "frequency": "monthly"},
+    {"name": "Tax refund", "category": "Refunds", "amount": 1200, "frequency": "one_time", "month": 4}
+  ],
+  "expenses": [
+    {"name": "Rent", "category": "Housing", "type": "Bill", "amount": 1650, "frequency": "monthly", "due_day": 1},
+    {"name": "Electricity", "category": "Utilities", "type": "Bill", "amount": 110, "frequency": "monthly", "due_day": 12},
+    {"name": "Internet", "category": "Utilities", "type": "Bill", "amount": 70, "frequency": "monthly", "due_day": 18},
+    {"name": "Phone", "category": "Utilities", "type": "Bill", "amount": 85, "frequency": "monthly", "due_day": 22},
+    {"name": "Car Payment", "category": "Transportation", "type": "Bill", "amount": 385, "frequency": "monthly", "due_day": 5},
+    {"name": "Car Insurance", "category": "Insurance", "type": "Bill", "amount": 720, "frequency": "quarterly", "month": 1},
+    {"name": "Gas / Fuel", "category": "Transportation", "type": "Expense", "amount": 45, "frequency": "weekly"},
+    {"name": "Groceries", "category": "Food", "type": "Expense", "amount": 520, "frequency": "monthly"},
+    {"name": "Dining Out", "category": "Food", "type": "Expense", "amount": 180, "frequency": "monthly"},
+    {"name": "Streaming Services", "category": "Subscriptions", "type": "Bill", "amount": 38, "frequency": "monthly", "due_day": 3},
+    {"name": "Gym", "category": "Health", "type": "Bill", "amount": 45, "frequency": "monthly", "due_day": 1},
+    {"name": "Holiday Gifts", "category": "Giving", "type": "Expense", "amount": 600, "frequency": "yearly", "month": 12},
+    {"name": "Emergency Fund Transfer", "category": "Savings", "type": "Bill", "amount": 300, "frequency": "monthly", "due_day": 15}
+  ],
+  "savings_goals": [
+    {"name": "Emergency Fund", "target": 10000, "saved": 3200, "target_date": "2026-12-31"},
+    {"name": "Japan Trip", "target": 4500, "saved": 900, "target_date": "2027-04-01"}
+  ],
+  "debts": [
+    {"name": "Visa", "balance": 3200, "apr": 22.9, "min_payment": 95},
+    {"name": "Student Loan", "balance": 14800, "apr": 5.5, "min_payment": 180}
+  ]
+}

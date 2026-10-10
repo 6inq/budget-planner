@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+*.zip
+
+# Workbooks people generate while trying the skill (samples/ is kept)
+*.xlsx
+!samples/*.xlsx
+budget-config.json
+~$*.xlsx
+
+.DS_Store
+Thumbs.db

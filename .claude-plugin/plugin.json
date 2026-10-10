@@ -1,0 +1,13 @@
+{
+  "name": "budget-planner",
+  "version": "1.0.0",
+  "description": "Say \"Start Budgeting\" and get a professional, formula-driven Excel budget with an annual dashboard, charts and monthly breakdown. Personal or business, light or dark mode.",
+  "author": {
+    "name": "6inq",
+    "url": "https://github.com/6inq"
+  },
+  "homepage": "https://github.com/6inq/budget-planner",
+  "repository": "https://github.com/6inq/budget-planner",
+  "license": "MIT",
+  "keywords": ["budget", "excel", "finance", "spreadsheet", "personal-finance", "business"]
+}

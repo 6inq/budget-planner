@@ -1,0 +1,16 @@
+{
+  "name": "6inq",
+  "description": "Claude skills by 6inq, including Budget Planner: professional Excel budgets from a short conversation.",
+  "owner": {
+    "name": "6inq",
+    "url": "https://github.com/6inq"
+  },
+  "plugins": [
+    {
+      "name": "budget-planner",
+      "source": "./",
+      "description": "Professional Excel budget builder: annual dashboard, charts, paycheck calendar, personal or business, light or dark mode.",
+      "version": "1.0.0"
+    }
+  ]
+}
