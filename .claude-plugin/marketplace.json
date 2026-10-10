@@ -10,7 +10,7 @@
       "name": "budget-planner",
       "source": "./",
       "description": "Professional Excel budget builder: annual dashboard, charts, paycheck calendar, personal or business, light or dark mode.",
-      "version": "1.0.0"
+      "version": "1.0.1"
     }
   ]
 }

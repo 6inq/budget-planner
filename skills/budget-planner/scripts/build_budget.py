@@ -13,6 +13,7 @@ import argparse
 import calendar
 import json
 import re
+import shutil
 import sys
 import zipfile
 from datetime import date, timedelta
@@ -45,6 +46,10 @@ from profiles import PROFILES  # noqa: E402
 # ---------------------------------------------------------------- constants
 
 FONT_NAME = "Segoe UI"
+CREDIT_TEXT = "Budget Planner - Claude Skill by 6inq"
+CREDIT_URL = "https://github.com/6inq/budget-planner"
+SETTINGS_CELL = "E2"  # on the hidden Lists sheet; lets read_workbook.py rebuild with the same choices
+SETTINGS_FORMAT = 1
 
 MODES = {
     "light": {
@@ -167,6 +172,23 @@ def validate_pay(pay: dict) -> dict:
     return clean
 
 
+def validate_paychecks(entries, config: dict):
+    """Optional explicit paycheck list (written by read_workbook.py) that replaces the generated schedule."""
+    if entries is None:
+        return None
+    if not isinstance(entries, list):
+        fail("'pay.paychecks' must be a list of {date, amount, note}")
+    start, end = window_bounds(config)
+    clean = []
+    for entry in entries:
+        day = parse_date(entry.get("date"), "pay.paychecks.date")
+        if not start <= day <= end:
+            fail(f"paycheck date {day} is outside the budget period {period_label(config)}")
+        clean.append({"date": day, "amount": check_amount(entry.get("amount") or 0, "pay.paychecks.amount"),
+                      "note": str(entry.get("note") or "")})
+    return sorted(clean, key=lambda p: p["date"])
+
+
 def validate_semimonthly(days) -> list[str]:
     if not isinstance(days, list) or len(days) != 2:
         fail("'pay.semimonthly_days' must list exactly 2 paydays from: 1, 15, last")
@@ -252,6 +274,7 @@ def validate_config(raw: dict) -> dict:
         "category_chart": raw.get("category_chart", "doughnut"),
         "pay": validate_pay(raw.get("pay") or {}),
     }
+    config["pay"]["paychecks"] = validate_paychecks((raw.get("pay") or {}).get("paychecks"), config)
     check_choice(config["mode"], tuple(MODES), "mode")
     check_choice(config["accent"], tuple(ACCENTS), "accent")
     check_choice(config["category_chart"], CHARTS, "category_chart")
@@ -277,6 +300,13 @@ def generate_paydays(config: dict) -> list[date]:
         return stepped_dates(pay.get("first_payday") or first_friday(start), step, start, end)
     tokens = pay["semimonthly_days"] if pay["frequency"] == "semimonthly" else [pay["monthly_day"]]
     return [resolve_day(m.year, m.month, t) for m in window_months(config) for t in tokens]
+
+
+def paycheck_entries(config: dict) -> list[dict]:
+    """Paydays with their amounts: the explicit list if given, else the generated schedule."""
+    if config["pay"].get("paychecks") is not None:
+        return config["pay"]["paychecks"]
+    return [{"date": d, "amount": config["pay"]["amount"], "note": ""} for d in generate_paydays(config)]
 
 
 def stepped_dates(anchor: date, step: timedelta, start: date, end: date) -> list[date]:
@@ -334,10 +364,10 @@ def merge_unique(base: list[str], extra: list[str]) -> list[str]:
 
 
 def compute_summary(config: dict) -> dict:
-    paydays = generate_paydays(config)
+    paydays = paycheck_entries(config)
     pay_by_month = [0.0] * 12
-    for day in paydays:
-        pay_by_month[month_index(config, day)] += config["pay"]["amount"]
+    for entry in paydays:
+        pay_by_month[month_index(config, entry["date"])] += entry["amount"]
     fixed_type = config["profile"]["types"][0]
     money_in = list(pay_by_month) if config["profile"]["pay_is_income"] else [0.0] * 12
     fixed = [0.0] * 12 if config["profile"]["pay_is_income"] else list(pay_by_month)
@@ -473,6 +503,21 @@ def write_banner(ws, theme: Theme, title: str, subtitle: str, last_col: int):
     ws["B3"].font = theme.font(10, color=theme["muted"], italic=True)
     ws.row_dimensions[2].height = 36
     ws.row_dimensions[3].height = 18
+    write_credit(ws, theme, last_col)
+
+
+def write_credit(ws, theme: Theme, last_col: int):
+    """Small, muted attribution on every sheet (row 4 is an empty spacer row) and in the print footer."""
+    ws.merge_cells(f"B4:{get_column_letter(last_col)}4")
+    cell = ws["B4"]
+    cell.value = CREDIT_TEXT
+    cell.hyperlink = CREDIT_URL
+    cell.font = theme.font(8, color=theme["muted"], italic=True)
+    cell.alignment = Alignment(horizontal="right", vertical="center")
+    ws.row_dimensions[4].height = 14
+    ws.oddFooter.right.text = CREDIT_TEXT
+    ws.oddFooter.right.size = 8
+    ws.oddFooter.right.color = "9AA3C2"
 
 
 def write_header(ws, theme: Theme, row: int, start_col: int, labels: list):
@@ -612,8 +657,20 @@ def build_lists(wb, config: dict) -> dict:
         for i, value in enumerate(values, start=2):
             ws[f"{letter}{i}"] = value
         ranges[letter] = f"={name}!${letter}$2:${letter}${len(values) + 1}"
+    ws["E1"] = "Planner Settings"
+    ws[SETTINGS_CELL] = json.dumps(export_settings(config))
     ws.sheet_state = "hidden"
     return {"categories": ranges["A"], "types": ranges["B"], "income": ranges["C"]}
+
+
+def export_settings(config: dict) -> dict:
+    """The questionnaire answers (no financial data), saved inside the workbook for later updates."""
+    pay = {k: v for k, v in config["pay"].items() if k != "paychecks"}
+    if "first_payday" in pay:
+        pay["first_payday"] = pay["first_payday"].isoformat()
+    keys = ("budget_type", "title", "owner", "year", "start_month", "currency_symbol",
+            "mode", "accent", "category_chart", "features")
+    return {"format": SETTINGS_FORMAT, **{k: config[k] for k in keys}, "pay": pay}
 
 
 def add_dropdown(ws, formula: str, cell_range: str):
@@ -672,11 +729,11 @@ def build_paychecks(wb, theme: Theme, config: dict) -> dict:
     write_banner(ws, theme, profile["pay_title"], profile["pay_help"], 6)
     date_label = "Pay Date" if profile["pay_is_income"] else "Payroll Date"
     write_header(ws, theme, HEADER_ROW, 2, ["#", date_label, "Month", profile["pay_amount_header"], "Notes"])
-    paydays = generate_paydays(config)
-    rows = len(paydays) + PAYCHECK_EXTRA_ROWS
+    entries = paycheck_entries(config)
+    rows = len(entries) + PAYCHECK_EXTRA_ROWS
     for offset in range(rows):
-        day = paydays[offset] if offset < len(paydays) else None
-        write_paycheck_row(ws, theme, FIRST_ROW + offset, offset + 1, day, config["pay"]["amount"])
+        entry = entries[offset] if offset < len(entries) else None
+        write_paycheck_row(ws, theme, FIRST_ROW + offset, offset + 1, entry)
     last = FIRST_ROW + rows - 1
     total = last + 1
     ws.cell(row=total, column=2, value="TOTAL")
@@ -690,15 +747,17 @@ def build_paychecks(wb, theme: Theme, config: dict) -> dict:
     return {"month": f"{ref}!$D${FIRST_ROW}:$D${last}", "pay": f"{ref}!$E${FIRST_ROW}:$E${last}"}
 
 
-def write_paycheck_row(ws, theme: Theme, row: int, number: int, day, amount: float):
+def write_paycheck_row(ws, theme: Theme, row: int, number: int, entry):
     fill = input_fill(theme, row)
+    day = entry["date"] if entry else None
+    amount = entry["amount"] if entry else None
     style_cell(ws.cell(row=row, column=2, value=number if day else None), theme, fill=theme["calc"],
                font=theme.font(10, color=theme["muted"]), align="center")
     style_cell(ws.cell(row=row, column=3, value=day), theme, fill=fill, fmt="ddd, mmm d, yyyy")
     month = f'=IF(C{row}="","",DATE(YEAR(C{row}),MONTH(C{row}),1))'
     style_cell(ws.cell(row=row, column=4, value=month), theme, fill=theme["calc"], fmt="mmm yyyy")
-    style_cell(ws.cell(row=row, column=5, value=amount if day and amount else None), theme, fill=fill, fmt=theme.money)
-    style_cell(ws.cell(row=row, column=6), theme, fill=fill)
+    style_cell(ws.cell(row=row, column=5, value=amount or None), theme, fill=fill, fmt=theme.money)
+    style_cell(ws.cell(row=row, column=6, value=(entry or {}).get("note") or None), theme, fill=fill)
 
 
 def pay_formula(paychecks: dict):
@@ -1121,6 +1180,8 @@ def build_workbook(config: dict) -> Workbook:
         refs["debts_total"] = build_debts(wb, theme, config)["total_row"]
     build_dashboard(wb, theme, config, refs)
     order_sheets(wb, sheets)
+    wb.properties.creator = CREDIT_TEXT
+    wb.properties.title = config["title"]
     wb.calculation.fullCalcOnLoad = True
     return wb
 
@@ -1154,23 +1215,33 @@ def unlink_label_formats(path: Path):
             dst.writestr(info, data)
 
 
-def build_from_config(raw: dict, out: str | None = None) -> dict:
+def backup_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem} (backup){path.suffix}")
+
+
+def build_from_config(raw: dict, out: str | None = None, backup: bool = False) -> dict:
     config = validate_config(raw)
     path = Path(out or default_output_name(config)).resolve()
+    result = {"file": str(path)}
+    if backup and path.exists():
+        shutil.copy2(path, backup_path(path))
+        result["backup"] = str(backup_path(path))
     build_workbook(config).save(path)
     unlink_label_formats(path)
-    return {"file": str(path), **compute_summary(config)}
+    return {**result, **compute_summary(config)}
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Generate a Budget Planner Excel workbook.")
     parser.add_argument("--config", required=True, help="Path to budget-config.json")
     parser.add_argument("--out", help="Output .xlsx path")
+    parser.add_argument("--backup", action="store_true",
+                        help="If the output file exists, copy it to '<name> (backup).xlsx' first")
     args = parser.parse_args(argv)
     try:
         # utf-8-sig accepts the BOM that Windows PowerShell adds when saving files.
         raw = json.loads(Path(args.config).read_text(encoding="utf-8-sig"))
-        result = build_from_config(raw, args.out)
+        result = build_from_config(raw, args.out, args.backup)
     except FileNotFoundError:
         print(f"ERROR: config file not found: {args.config}", file=sys.stderr)
         return 2
