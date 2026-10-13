@@ -81,10 +81,18 @@ INCOME_INPUT_ROWS = 15
 EXPENSE_INPUT_ROWS = 60
 PAYCHECK_EXTRA_ROWS = 6
 TRACKER_ROWS = 10
+PLAN_HORIZONS = {"car": 72, "house": 360}  # schedule months per loan type
+PLAN_MONTHS = PLAN_HORIZONS["car"]
+PLAN_INPUT_ROW = 7  # Payoff Plan: first input row
+PLAN_GOAL_OFFSET = 4  # Payoff Plan: row of the extra-payment goal, counted from PLAN_INPUT_ROW
+PLAN_HEADER_ROW = 21
+PLAN_HELPER_COL = 14  # N: hidden full-length columns for the no-extra comparison
 INCOME_MONTH_COL = 4    # D
 EXPENSE_MONTH_COL = 6   # F
 EXPENSE_TOTAL_COL = EXPENSE_MONTH_COL + 12  # R
-SHEET_FILL_COLS = 30
+PAID_COL = EXPENSE_TOTAL_COL + 2  # T: first "Paid" month column on Expenses
+PAID_MARK = "Paid"
+SHEET_FILL_COLS = PAID_COL + 13
 SHEET_FILL_ROWS = 200
 MONTH_TABLE_HEADER = 29
 CATEGORY_COL = 11  # K
@@ -216,6 +224,7 @@ def validate_line(item: dict, field: str, types=None) -> dict:
         check_choice(clean["type"], types, f"{field}.type")
         due = item.get("due_day")
         clean["due_day"] = None if due is None else check_int_range(due, 1, 31, f"{field}.due_day")
+        clean["paid"] = validate_paid(item.get("paid"), clean["name"], field)
     if "months" in item:
         months = item["months"]
         if not isinstance(months, list) or len(months) != 12:
@@ -228,6 +237,14 @@ def validate_line(item: dict, field: str, types=None) -> dict:
     month = item.get("month")
     clean["month"] = None if month is None else check_int_range(month, 1, 12, f"{field}.month")
     return clean
+
+
+def validate_paid(paid, name: str, field: str) -> list[bool]:
+    if paid is None:
+        return [False] * 12
+    if not isinstance(paid, list) or len(paid) != 12 or not all(isinstance(v, bool) for v in paid):
+        fail(f"'{field}.paid' for '{name}' must be a list of 12 true/false values")
+    return list(paid)
 
 
 def validate_goal(item: dict) -> dict:
@@ -247,6 +264,60 @@ def validate_debt(item: dict) -> dict:
         "apr": check_amount(item.get("apr", 0), "debts.apr"),
         "min_payment": check_amount(item.get("min_payment", 0), "debts.min_payment"),
     }
+
+
+# key, label, number format ("money" = currency); row = PLAN_INPUT_ROW + position
+PLAN_INPUTS = [
+    ("loan_name", "Loan name", None),
+    ("balance", "Loan balance today", "money"),
+    ("apr", "Interest rate (APR %)", '0.00"%"'),
+    ("payment", "Regular monthly payment", "money"),
+    ("asset_value", "Vehicle value today", "money"),
+    ("value_drop", "Value drop per month (estimate)", "money"),
+    ("take_home", "Take-home per paycheck", "money"),
+    ("paychecks_per_month", "Paychecks per month", "0.00"),
+    ("monthly_bills", "Monthly bills (not this loan or savings)", "money"),
+    ("savings_percent", "Savings (% of take-home)", '0"%"'),
+    ("buffer", "Monthly buffer for surprises", "money"),
+    ("start", "Plan starts", "mmm d, yyyy"),
+    ("target_gap", "Target: underwater by at most", "money"),
+]
+PLAN_AMOUNT_KEYS = [k for k, _, _ in PLAN_INPUTS if k not in ("loan_name", "start")]
+# Wording that differs for a home loan; a home's value can rise, so its value change may be negative.
+PLAN_TYPE_TEXT = {
+    "car": {"title": "Car Loan Payoff Plan", "asset": "Vehicle Value"},
+    "house": {"title": "Home Loan Payoff Plan", "asset": "Home Value",
+              "payment": "Regular payment (principal + interest)", "asset_value": "Home value today",
+              "value_drop": "Value change per month (negative if rising)"},
+}
+
+
+def plan_label(key: str, label: str, loan_type: str) -> str:
+    return PLAN_TYPE_TEXT[loan_type].get(key, label)
+
+
+def plan_row(key: str) -> int:
+    return PLAN_INPUT_ROW + [k for k, _, _ in PLAN_INPUTS].index(key)
+
+
+def validate_payoff_plan(plan: dict) -> dict:
+    """Optional loan payoff plan. Every field may be left out; the sheet then shows blank inputs."""
+    loan_type = plan.get("loan_type", "car")
+    check_choice(loan_type, tuple(PLAN_HORIZONS), "payoff_plan.loan_type")
+    clean = {"loan_type": loan_type, "loan_name": str(plan.get("loan_name") or "")}
+    for key in PLAN_AMOUNT_KEYS:
+        value = plan.get(key)
+        if value is not None and key == "value_drop" and isinstance(value, (int, float)) and value < 0:
+            clean[key] = float(value)  # a rising value
+            continue
+        clean[key] = None if value is None else check_amount(value, f"payoff_plan.{key}")
+    clean["start"] = parse_date(plan["start"], "payoff_plan.start") if plan.get("start") else None
+    extra = plan.get("extra_paid") or []
+    months = PLAN_HORIZONS[loan_type]
+    if not isinstance(extra, list) or len(extra) > months:
+        fail(f"'payoff_plan.extra_paid' must be a list of at most {months} amounts")
+    clean["extra_paid"] = [None if v is None else check_amount(v, "payoff_plan.extra_paid") for v in extra]
+    return clean
 
 
 def validate_config(raw: dict) -> dict:
@@ -280,11 +351,13 @@ def validate_config(raw: dict) -> dict:
     check_choice(config["category_chart"], CHARTS, "category_chart")
     features = raw.get("features") or {}
     config["features"] = {"savings_goals": bool(features.get("savings_goals")),
-                          "debt_tracker": bool(features.get("debt_tracker"))}
+                          "debt_tracker": bool(features.get("debt_tracker")),
+                          "payoff_plan": bool(features.get("payoff_plan"))}
     config["income"] = [validate_line(i, "income") for i in raw.get("income") or []]
     config["expenses"] = [validate_line(e, "expenses", profile["types"]) for e in raw.get("expenses") or []]
     config["savings_goals"] = [validate_goal(g) for g in raw.get("savings_goals") or []]
     config["debts"] = [validate_debt(d) for d in raw.get("debts") or []]
+    config["payoff_plan"] = validate_payoff_plan(raw.get("payoff_plan") or {})
     return config
 
 
@@ -670,7 +743,10 @@ def export_settings(config: dict) -> dict:
         pay["first_payday"] = pay["first_payday"].isoformat()
     keys = ("budget_type", "title", "owner", "year", "start_month", "currency_symbol",
             "mode", "accent", "category_chart", "features")
-    return {"format": SETTINGS_FORMAT, **{k: config[k] for k in keys}, "pay": pay}
+    settings = {"format": SETTINGS_FORMAT, **{k: config[k] for k in keys}, "pay": pay}
+    if config["features"]["payoff_plan"]:
+        settings["payoff_loan_type"] = config["payoff_plan"]["loan_type"]
+    return settings
 
 
 def add_dropdown(ws, formula: str, cell_range: str):
@@ -821,10 +897,59 @@ def build_expenses(wb, theme: Theme, config: dict, lists: dict, paychecks: dict)
     ws.cell(row=total, column=2, value="TOTAL")
     write_column_totals(ws, theme, total, EXPENSE_MONTH_COL, last_col, FIRST_ROW)
     style_total_row(ws, theme, total, 2, last_col)
-    set_print_area(ws, last_col, total)
+    write_paid_block(ws, theme, config, items, row, last)
+    write_paid_totals(ws, theme, total, last)
+    set_print_area(ws, PAID_COL + 11, total + 2)
     set_widths(ws, {"B": 30, "C": 22, "D": 11, "E": 9}, EXPENSE_MONTH_COL, last_col)
+    ws.column_dimensions[get_column_letter(last_col + 1)].width = 3
+    for i in range(12):
+        ws.column_dimensions[get_column_letter(PAID_COL + i)].width = 11
     ws.freeze_panes = f"C{FIRST_ROW}"
     return {"first": FIRST_ROW, "last": last}
+
+
+def write_paid_block(ws, theme: Theme, config: dict, items: list, first: int, last: int):
+    """One "Paid" dropdown per bill per month, right of the amounts. Marks never change any total."""
+    write_header(ws, theme, HEADER_ROW, PAID_COL, window_months(config))
+    for i in range(12):
+        ws.cell(row=HEADER_ROW, column=PAID_COL + i).number_format = f'"{PAID_MARK}" mmm'
+    for offset, row in enumerate(range(first, last + 1)):
+        item = items[offset] if offset < len(items) else None
+        paid = (item or {}).get("paid") or [False] * 12
+        for i in range(12):
+            cell = ws.cell(row=row, column=PAID_COL + i, value=PAID_MARK if paid[i] else None)
+            style_cell(cell, theme, fill=input_fill(theme, row), align="center")
+    add_dropdown(ws, f'"{PAID_MARK}"', paid_range(first, last))
+    green = Font(name=FONT_NAME, bold=True, color=POSITIVE)
+    tint = theme.fill(blend(POSITIVE, theme["card"], 0.18))
+    test = f'{get_column_letter(PAID_COL)}{first}="{PAID_MARK}"'
+    amounts = f"{get_column_letter(EXPENSE_MONTH_COL)}{first}:{get_column_letter(EXPENSE_MONTH_COL + 11)}{last}"
+    for cell_range in (amounts, paid_range(first, last)):
+        ws.conditional_formatting.add(cell_range, FormulaRule(formula=[test], font=green, fill=tint))
+
+
+def paid_range(first: int, last: int) -> str:
+    return f"{get_column_letter(PAID_COL)}{first}:{get_column_letter(PAID_COL + 11)}{last}"
+
+
+def write_paid_totals(ws, theme: Theme, total: int, last: int):
+    """PAID and LEFT TO PAY rows under TOTAL, per month and for the year."""
+    paid_row, left_row = total + 1, total + 2
+    for row, label, color in ((paid_row, "PAID", POSITIVE), (left_row, "LEFT TO PAY", None)):
+        ws.cell(row=row, column=2, value=label).font = theme.font(10, True, color)
+    for i in range(12):
+        amount = get_column_letter(EXPENSE_MONTH_COL + i)
+        mark = get_column_letter(PAID_COL + i)
+        paid = (f'=SUMIFS({amount}{FIRST_ROW}:{amount}{last},'
+                f'{mark}{FIRST_ROW}:{mark}{last},"{PAID_MARK}")')
+        cells = ((paid_row, paid, POSITIVE), (left_row, f"={amount}{total}-{amount}{paid_row}", None))
+        for row, formula, color in cells:
+            cell = ws.cell(row=row, column=EXPENSE_MONTH_COL + i, value=formula)
+            cell.number_format, cell.font = theme.money, theme.font(10, True, color)
+    first_amount, last_amount = get_column_letter(EXPENSE_MONTH_COL), get_column_letter(EXPENSE_MONTH_COL + 11)
+    for row, color in ((paid_row, POSITIVE), (left_row, None)):
+        cell = ws.cell(row=row, column=EXPENSE_TOTAL_COL, value=f"=SUM({first_amount}{row}:{last_amount}{row})")
+        cell.number_format, cell.font = theme.money, theme.font(10, True, color)
 
 
 def write_payroll_expense_row(ws, theme: Theme, config: dict, paychecks: dict):
@@ -939,6 +1064,155 @@ def write_debt_row(ws, theme: Theme, row: int, debt: dict):
         style_cell(ws.cell(row=row, column=col, value=formula), theme, fill=theme["calc"], fmt=fmt, align="right")
 
 
+# ---------------------------------------------------------------- sheets: payoff plan
+
+def build_payoff_plan(wb, theme: Theme, config: dict):
+    """Extra-payment goal from take-home minus bills, savings and a buffer, then a month-by-month
+    schedule showing when the loan drops below the car's or home's value and when it is paid off."""
+    ws = wb.create_sheet(config["profile"]["sheets"]["payoff"])
+    paint_sheet(ws, theme)
+    loan_type = config["payoff_plan"]["loan_type"]
+    text = PLAN_TYPE_TEXT[loan_type]
+    months = PLAN_HORIZONS[loan_type]
+    write_banner(ws, theme, text["title"],
+                 "Change any number under Your Numbers; the goal and every month below update. "
+                 "Log what you really paid in Extra Paid.", 12)
+    write_plan_inputs(ws, theme, config)
+    first, last = PLAN_HEADER_ROW + 1, PLAN_HEADER_ROW + months
+    write_plan_results(ws, theme, first, last)
+    write_header(ws, theme, PLAN_HEADER_ROW, 2, ["Month", "Start Balance", "Interest", "Regular Payment",
+                                                 "Extra Goal", "Extra Paid", "End Balance", text["asset"],
+                                                 "Underwater By", "Status", "Balance (no extra)"])
+    extra = config["payoff_plan"]["extra_paid"]
+    for n in range(months):
+        write_plan_row(ws, theme, first + n, n, extra[n] if n < len(extra) else None)
+    add_plan_rules(ws, theme, first, last)
+    set_print_area(ws, 12, last)
+    for letter, width in zip("BCDEFGHIJKL", (40, 15, 12, 16, 14, 14, 15, 15, 15, 14, 18)):
+        ws.column_dimensions[letter].width = width
+    for i, label in enumerate(("Month", "Balance (no extra)", text["asset"])):
+        letter = get_column_letter(PLAN_HELPER_COL + i)
+        ws.cell(row=PLAN_HEADER_ROW, column=PLAN_HELPER_COL + i, value=label)
+        ws.column_dimensions[letter].hidden = True
+    ws.freeze_panes = f"C{first}"
+
+
+def plan_cells() -> dict:
+    return {key: f"$C${plan_row(key)}" for key, _, _ in PLAN_INPUTS}
+
+
+def write_plan_inputs(ws, theme: Theme, config: dict):
+    plan, pay = config["payoff_plan"], config["pay"]
+    per_month = {"weekly": 52 / 12, "biweekly": 26 / 12, "semimonthly": 2, "monthly": 1}
+    defaults = {"paychecks_per_month": per_month.get(pay["frequency"])}
+    write_section_title(ws, theme, f"B{PLAN_INPUT_ROW - 1}", "Your Numbers")
+    for key, label, fmt in PLAN_INPUTS:
+        row = plan_row(key)
+        value = plan.get(key)
+        if value is None:
+            value = defaults.get(key)
+        label = plan_label(key, label, plan["loan_type"])
+        style_cell(ws.cell(row=row, column=2, value=label), theme, fill=theme["calc"])
+        style_cell(ws.cell(row=row, column=3, value=value if value != "" else None), theme,
+                   fill=theme["input"], fmt=theme.money if fmt == "money" else fmt, align="right")
+
+
+def write_plan_results(ws, theme: Theme, first: int, last: int):
+    c = plan_cells()
+    months = f"$B${first}:$B${last}"
+
+    n_col, o_col, p_col = (get_column_letter(PLAN_HELPER_COL + i) for i in range(3))
+    helper_months = f"${n_col}${first}:${n_col}${last}"
+    plain = f"${o_col}${first}:${o_col}${last}"
+    plain_value = f"${p_col}${first}:${p_col}${last}"
+
+    def first_month(condition: str, months=months) -> str:
+        return (f'=IF(N({c["balance"]})=0,"",IFERROR(INDEX({months},'
+                f'MATCH(TRUE,INDEX({condition},0),0)),"After {(last - first + 1) // 12} years"))')
+
+    row = PLAN_INPUT_ROW
+    target = c["target_gap"]
+    target_month = first_month(f"$J${first}:$J${last}<={target}")  # drop its "=" to nest it below
+    results = [
+        ("Monthly take-home", f"=N({c['take_home']})*N({c['paychecks_per_month']})", theme.money),
+        ("Bills + regular loan payment", f"=N({c['monthly_bills']})+N({c['payment']})", theme.money),
+        ("Savings", f"=ROUND(G{row}*N({c['savings_percent']})/100,2)", theme.money),
+        ("Buffer", f"=N({c['buffer']})", theme.money),
+        ("EXTRA PAYMENT GOAL (per month)", f"=MAX(0,ROUND(G{row}-G{row + 1}-G{row + 2}-G{row + 3},2))", theme.money),
+        ("Above water by", first_month(f"$J${first}:$J${last}<=0"), "mmm yyyy"),
+        ("Above water by (regular payments only)",
+         first_month(f"{plain}-{plain_value}<=0", helper_months), "mmm yyyy"),
+        ("Paid off by", first_month(f"$H${first}:$H${last}<=0"), "mmm yyyy"),
+        ("Paid off by (regular payments only)", first_month(f"{plain}<=0", helper_months), "mmm yyyy"),
+        ("Target reached by", f'=IF(ISNUMBER({target}),{target_month[1:]},"")', "mmm yyyy"),
+    ]
+    write_section_title(ws, theme, f"E{PLAN_INPUT_ROW - 1}", "Your Plan")
+    for i, (label, formula, fmt) in enumerate(results):
+        r = row + i
+        goal = i == PLAN_GOAL_OFFSET
+        color = theme.accent if goal else None
+        ws.merge_cells(f"E{r}:F{r}")
+        style_cell(ws.cell(row=r, column=5, value=label), theme, fill=theme["calc"],
+                   font=theme.font(10, bold=goal, color=color))
+        style_cell(ws.cell(row=r, column=6), theme, fill=theme["calc"])
+        style_cell(ws.cell(row=r, column=7, value=formula), theme, fill=theme["calc"], fmt=fmt, align="right",
+                   font=theme.font(12 if goal else 10, bold=True, color=color))
+
+
+def write_plan_row(ws, theme: Theme, row: int, n: int, extra):
+    c = plan_cells()
+    goal = f"$G${PLAN_INPUT_ROW + PLAN_GOAL_OFFSET}"
+    n_col, o_col, p_col = (get_column_letter(PLAN_HELPER_COL + i) for i in range(3))
+    month = f'IF({c["start"]}="","",EDATE({c["start"]},{n}))'
+    value = f"MAX(0,N({c['asset_value']})-N({c['value_drop']})*{n + 1})"
+    prev_plain = f"N({c['balance']})" if n == 0 else f"{o_col}{row - 1}"
+    formulas = {
+        2: (month, "mmm yyyy"),
+        3: (f"N({c['balance']})" if n == 0 else f"H{row - 1}", theme.money),
+        4: (f"ROUND(C{row}*N({c['apr']})/1200,2)", theme.money),
+        5: (f"MIN(N({c['payment']}),C{row}+D{row})", theme.money),
+        6: (f"MIN({goal},MAX(0,C{row}+D{row}-E{row}))", theme.money),
+        8: (f'MAX(0,C{row}+D{row}-E{row}-IF(G{row}="",F{row},G{row}))', theme.money),
+        9: (value, theme.money),
+        10: (f"H{row}-I{row}", theme.money),
+        11: (f'IF(N({c["balance"]})=0,"",IF(H{row}<=0,"Paid off",IF(J{row}<=0,"Above water","Underwater")))',
+             None),
+        12: (f"{o_col}{row}", theme.money),
+    }
+    # Only the payoff month and the months before it are shown.
+    active = None if n == 0 else f"N(H{row - 1})>0"
+    fill = theme["zebra"] if n % 2 else theme["card"]
+    for col, (formula, fmt) in formulas.items():
+        value_text = f"={formula}" if active is None else f'=IF({active},{formula},"")'
+        style_cell(ws.cell(row=row, column=col, value=value_text), theme, fill=fill, fmt=fmt,
+                   align="left" if col == 2 else "right")
+    style_cell(ws.cell(row=row, column=7, value=extra), theme, fill=theme["input"], fmt=theme.money, align="right")
+    helpers = (f"={month}", f"=MAX(0,ROUND({prev_plain}*(1+N({c['apr']})/1200),2)-N({c['payment']}))", f"={value}")
+    for i, formula in enumerate(helpers):
+        ws.cell(row=row, column=PLAN_HELPER_COL + i, value=formula)
+
+
+def add_plan_rules(ws, theme: Theme, first: int, last: int):
+    # Months after the payoff month are blank: hide their stripes and borders too.
+    hidden_side = Side(style="thin", color=theme["bg"])
+    ws.conditional_formatting.add(f"B{first}:L{last}", FormulaRule(
+        formula=[f'$C{first}=""'], stopIfTrue=True, fill=theme.fill(theme["bg"]),
+        border=Border(left=hidden_side, right=hidden_side, top=hidden_side, bottom=hidden_side)))
+    # Highlight the first month the gap is within the target.
+    target = plan_cells()["target_gap"]
+    ws.conditional_formatting.add(f"B{first}:L{last}", FormulaRule(
+        formula=[f"AND(ISNUMBER({target}),$J{first}<={target},OR(ROW()={first},N($J{first - 1})>{target}))"],
+        fill=theme.fill(theme.accent_tint), font=Font(name=FONT_NAME, bold=True, color=theme["text"])))
+    status = f"K{first}:K{last}"
+    for text, color in (("Underwater", NEGATIVE), ("Above water", POSITIVE), ("Paid off", POSITIVE)):
+        ws.conditional_formatting.add(status, FormulaRule(
+            formula=[f'K{first}="{text}"'], font=Font(name=FONT_NAME, bold=True, color=color)))
+    # Underwater By: a positive gap is bad here, so the usual sign colors are flipped.
+    for operator, color in (("greaterThan", NEGATIVE), ("lessThanOrEqual", POSITIVE)):
+        ws.conditional_formatting.add(f"J{first}:J{last}", CellIsRule(
+            operator=operator, formula=["0"], font=Font(name=FONT_NAME, bold=True, color=color)))
+
+
 # ---------------------------------------------------------------- dashboard
 
 def build_dashboard(wb, theme: Theme, config: dict, refs: dict):
@@ -961,7 +1235,7 @@ def build_dashboard(wb, theme: Theme, config: dict, refs: dict):
     add_month_chart(ws, theme, profile)
     add_category_chart(ws, theme, config, cat_total)
     tracker_row = max(month_total, cat_total) + 3
-    has_trackers = any(config["features"].values())
+    has_trackers = config["features"]["savings_goals"] or config["features"]["debt_tracker"]
     write_tracker_cards(ws, theme, config, refs, tracker_row)
     ws.print_area = f"A1:O{tracker_row + 4 if has_trackers else tracker_row}"
     ws.page_setup.fitToHeight = 1
@@ -1178,6 +1452,8 @@ def build_workbook(config: dict) -> Workbook:
         refs["goals_total"] = build_savings(wb, theme, config)["total_row"]
     if config["features"]["debt_tracker"]:
         refs["debts_total"] = build_debts(wb, theme, config)["total_row"]
+    if config["features"]["payoff_plan"]:
+        build_payoff_plan(wb, theme, config)
     build_dashboard(wb, theme, config, refs)
     order_sheets(wb, sheets)
     wb.properties.creator = CREDIT_TEXT
@@ -1187,7 +1463,7 @@ def build_workbook(config: dict) -> Workbook:
 
 
 def order_sheets(wb, sheets: dict):
-    order = [sheets[k] for k in ("dashboard", "income", "pay", "expenses", "goals", "debts", "lists")]
+    order = [sheets[k] for k in ("dashboard", "income", "pay", "expenses", "goals", "debts", "payoff", "lists")]
     for target, title in enumerate(t for t in order if t in wb.sheetnames):
         wb.move_sheet(title, offset=target - wb.sheetnames.index(title))
     wb.active = 0

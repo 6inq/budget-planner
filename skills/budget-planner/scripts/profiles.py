@@ -11,7 +11,7 @@ PERSONAL = {
     "file_prefix": "Budget Planner",
     "sheets": {
         "dashboard": "Dashboard", "income": "Income", "pay": "Paychecks", "expenses": "Expenses",
-        "goals": "Savings Goals", "debts": "Debt Tracker", "lists": "Lists",
+        "goals": "Savings Goals", "debts": "Debt Tracker", "payoff": "Payoff Plan", "lists": "Lists",
     },
     "pay_is_income": True,
     "pay_prefix": "Paid",
@@ -80,7 +80,7 @@ BUSINESS = {
     "file_prefix": "Business Budget",
     "sheets": {
         "dashboard": "Dashboard", "income": "Revenue", "pay": "Payroll", "expenses": "Expenses",
-        "goals": "Reserve Goals", "debts": "Loans & Credit", "lists": "Lists",
+        "goals": "Reserve Goals", "debts": "Loans & Credit", "payoff": "Payoff Plan", "lists": "Lists",
     },
     "pay_is_income": False,
     "pay_prefix": "Payroll",

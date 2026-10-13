@@ -117,9 +117,10 @@ You can also just ask Claude Code: *"Install the skill from https://github.com/6
 | Dashboard | Money In, Money Out, Net Savings, Savings Rate, Avg Monthly Spend, Paychecks | Revenue, Expenses, Net Profit, Profit Margin, Avg Monthly Burn, Payroll Runs |
 | Income / Revenue | Your paycheck row (automatic) plus other income per month | Revenue streams per month |
 | Paychecks / Payroll | Every payday in the year, with an editable take-home amount | Every payroll date, with an editable cost per run |
-| Expenses | Bills (fixed) and Expenses (variable), with Category and Type dropdowns | Fixed and Variable costs, with payroll pulled in automatically |
+| Expenses | Bills (fixed) and Expenses (variable), with Category and Type dropdowns, plus a Paid mark per month and PAID / LEFT TO PAY totals | Fixed and Variable costs, with payroll pulled in automatically |
 | Savings Goals / Reserve Goals (optional) | Target, saved so far, progress, months left, needed per month | Same, for cash reserves and tax set-asides |
 | Debt Tracker / Loans & Credit (optional) | Balance, APR, minimum payment, months to payoff, estimated interest | Same, for business cards and loans |
+| Payoff Plan (optional) | For a car or home loan: a monthly extra-payment goal and a month-by-month schedule showing when it is above water and paid off | Same, for a vehicle or property loan |
 
 More screenshots:
 
@@ -165,11 +166,12 @@ python skills/budget-planner/scripts/import_transactions.py statement.csv --star
 | `pay.semimonthly_days` | Exactly two of `"1"`, `"15"`, `"last"` |
 | `pay.monthly_day` | `"1"`, `"15"`, `"last"`, or a day from 1 to 28 |
 | `pay.paychecks` | Optional explicit list of `{date, amount, note}` that replaces the generated schedule (written by `read_workbook.py` so per-paycheck edits survive updates) |
-| `features` | `{"savings_goals": true, "debt_tracker": true}` |
+| `features` | `{"savings_goals": true, "debt_tracker": true, "payoff_plan": true}` |
 | `income[]` | `name`, `category`, `amount`, `frequency` (`weekly`, `biweekly`, `semimonthly`, `monthly`, `quarterly`, `yearly`, `one_time`), optional `month`, or a `months` list of 12 numbers |
-| `expenses[]` | Same as income, plus `type` (`Bill` or `Expense` for personal, `Fixed` or `Variable` for business) and an optional `due_day` |
+| `expenses[]` | Same as income, plus `type` (`Bill` or `Expense` for personal, `Fixed` or `Variable` for business) an optional `due_day`, and an optional `paid` list of 12 true/false values |
 | `savings_goals[]` | `name`, `target`, `saved`, `target_date` |
 | `debts[]` | `name`, `balance`, `apr`, `min_payment` |
+| `payoff_plan` | `loan_type` (`car` or `house`), `loan_name`, `balance`, `apr`, `payment`, `asset_value`, `value_drop`, `take_home`, `paychecks_per_month`, `monthly_bills`, `savings_percent`, `buffer`, `start`, and optional `target_gap` and `extra_paid` (amounts by plan month) |
 
 ## Development
 

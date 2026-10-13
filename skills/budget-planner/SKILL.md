@@ -55,7 +55,14 @@ If they said yes to documents, run **Step 1b** before Round 3.
    - Semi-monthly: "Which two days do you get paid?" (multi-select, exactly two) 1st of the month / 15th of the month / Last day of the month. If the user picks one or three, ask again.
    - Weekly or Bi-weekly: "What is the date of your first payday in this budget?" Offer the first two Fridays of the budget's first month as options (or the date implied by a pay stub); accept any date.
    - Monthly: "Which day do you get paid?" 1st / 15th / Last day of the month / Other (a day from 1 to 28).
-3. LAST question: "Do you want to fill out the sheet, or me?" I'll fill it out myself / You fill it out for me. If documents already covered most items, phrase the options as "I'll fill in the rest myself" / "You fill in the rest for me".
+3. Payoff Plan: "Do you want a Payoff Plan sheet to pay off a car or home loan faster?" Yes, a car loan / Yes, a home loan / No thanks.
+   - If yes, ask for the loan details in one message (they can also upload the lender statement):
+     - Loan balance, interest rate (APR), and regular monthly payment (for a home loan, principal + interest only, not escrow).
+     - What the car or home is worth today (for example a Kelley Blue Book or Zillow estimate).
+     - When extra payments should start, and optionally how far underwater they are willing to be (the target).
+     - How much they want to save each month (% of take-home) and a small monthly buffer for surprises.
+   - Never guess loan numbers. If they do not have them yet, build the sheet with those cells blank and tell them which to fill.
+4. LAST question: "Do you want to fill out the sheet, or me?" I'll fill it out myself / You fill it out for me. If documents already covered most items, phrase the options as "I'll fill in the rest myself" / "You fill in the rest for me".
 
 ## Step 1b: Reading the user's documents
 
@@ -105,6 +112,7 @@ Write the answers and any confirmed document data to `budget-config.json` in the
 | Budget period | `year` and `start_month` ("Starting this month" sets `start_month` to the current month) |
 | Currency | `currency_symbol`: `$`, `€` or `£` |
 | Trackers | `features.savings_goals`, `features.debt_tracker` (the business names map to the same two flags) |
+| Payoff Plan: car loan / home loan | `features.payoff_plan: true` and `payoff_plan.loan_type`: `car` / `house`, plus the loan details (see Loan payoff plan) |
 
 Then run:
 
@@ -121,6 +129,7 @@ The default file name is `Budget Planner 2026.xlsx` or `Business Budget 2026.xls
   - **Paychecks** sheet: your take-home pay on each payday (every payday is already listed).
   - **Income** sheet: any other income per month (side jobs, bonuses, interest).
   - **Expenses** sheet: your bills and expenses per month. Pick a Category and a Type (Bill or Expense) from the dropdowns; starter rows are already there.
+  - Paid columns (right of the Annual Total): pick "Paid" under a month once that bill is paid. It turns green, and the PAID and LEFT TO PAY rows under TOTAL show what is still due.
 - Business:
   - **Revenue** sheet: expected revenue per month for each stream.
   - **Payroll** sheet: the total cost of each payroll run.
@@ -162,6 +171,7 @@ Use this whenever the user wants to change, add to or refresh a workbook made by
    - If it reports that a cell has a formula with no saved result, ask them to open the file in Excel, save it, and close it again.
    - If it reports a cell that should be a number, tell them which cell and ask what it should be.
 3. Merge in the new information: use Step 1b for any documents, or apply the changes they asked for. Show the confirmation table for anything taken from documents.
+   - When the user says a bill is paid, set that month to `true` in the item's `paid` list (12 true/false values, in budget order). Keep the amount; never zero it out to show it was paid.
 4. Rebuild to the same file, keeping a backup copy of the previous version:
    ```
    python "<skill dir>/scripts/build_budget.py" --config budget-config.json --out "<their file>.xlsx" --backup
@@ -169,6 +179,20 @@ Use this whenever the user wants to change, add to or refresh a workbook made by
 5. Tell them what changed (new or updated rows and the new annual totals), and that the previous version was saved as `<name> (backup).xlsx`.
 
 If `read_workbook.py` reports no saved settings, the file was made by another tool or an older version. Offer to build a fresh workbook through the questionnaire, then enter their existing numbers into it.
+
+## Loan payoff plan (on request)
+
+When the user wants to pay a car or home loan down faster (from the questionnaire or later), or get above water on a car or home worth less than they owe, turn on `features.payoff_plan` and fill `payoff_plan`:
+- `loan_type`: `car` (72-month schedule) or `house` (360-month schedule, for a mortgage).
+- From their lender: `balance`, `apr`, `payment`. Ask for these; never guess them. If they want the plan before they have them, use a clearly stated placeholder and tell them which cell to update.
+- `asset_value` (what the car or home is worth) and `value_drop` (its expected change per month; an estimate, say so). A car usually loses value; a home may gain it, so use a negative `value_drop` for a rising home value.
+- For a home loan, `payment` is principal + interest only. Escrow (taxes and insurance) is not part of the loan; count it in `monthly_bills`.
+- `take_home` per paycheck and `paychecks_per_month` (defaults from the pay frequency).
+- `monthly_bills`: their regular monthly bills, not counting this loan or savings.
+- `savings_percent`, `buffer` (a monthly cushion for surprises), and `start` (`YYYY-MM-DD`, when extra payments begin).
+- Optional `target_gap`: the most they are willing to still be underwater by (for example before trading in). The sheet shows the month it is reached and highlights that row.
+
+The sheet shows the monthly extra-payment goal and when the loan will be above water and paid off, with and without the extra. Report those dates and the interest saved. When the user says what they actually paid extra in a month, put it in `extra_paid` (a list by plan month; `null` for months not logged yet).
 
 ## Reference: summary JSON
 

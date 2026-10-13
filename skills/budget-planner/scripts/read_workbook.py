@@ -113,6 +113,7 @@ def read_month_lines(sheet: SheetReader, start: int, month_col: int, expense_typ
             item["type"] = normalize_type(sheet.text(row, 4), expense_types)
             due = sheet.number(row, 5)
             item["due_day"] = int(due) if 1 <= due <= 31 else None
+            item["paid"] = [sheet.text(row, bb.PAID_COL + i).lower() == bb.PAID_MARK.lower() for i in range(12)]
         items.append(item)
     return items
 
@@ -152,10 +153,27 @@ def read_debts(sheet: SheetReader) -> list[dict]:
     return debts
 
 
+def read_payoff_plan(sheet: SheetReader, loan_type: str) -> dict:
+    plan = {"loan_type": loan_type, "loan_name": sheet.text(bb.plan_row("loan_name"), 3)}
+    for key in bb.PLAN_AMOUNT_KEYS:
+        raw = sheet.value(bb.plan_row(key), 3)
+        plan[key] = None if raw in (None, "") else sheet.number(bb.plan_row(key), 3)
+    start = sheet.day(bb.plan_row("start"), 3)
+    plan["start"] = start.isoformat() if start else None
+    first = bb.PLAN_HEADER_ROW + 1
+    extra = [None if sheet.value(first + n, 7) in (None, "") else sheet.number(first + n, 7)
+             for n in range(bb.PLAN_HORIZONS[loan_type])]
+    while extra and extra[-1] is None:
+        extra.pop()
+    plan["extra_paid"] = extra
+    return plan
+
+
 def read_workbook(path: str) -> dict:
     wb_formulas = load_workbook(path)
     wb_values = load_workbook(path, data_only=True)
     config = read_settings(wb_formulas)
+    loan_type = config.pop("payoff_loan_type", "car")
     profile = PROFILES[config.get("budget_type", "personal")]
     sheets = profile["sheets"]
     pay_is_income = profile["pay_is_income"]
@@ -166,7 +184,10 @@ def read_workbook(path: str) -> dict:
                                           bb.EXPENSE_MONTH_COL, profile["types"])
     config["pay"]["paychecks"] = read_paychecks(open_reader(wb_formulas, wb_values, sheets["pay"]))
     has_goals, has_debts = sheets["goals"] in wb_formulas.sheetnames, sheets["debts"] in wb_formulas.sheetnames
-    config["features"] = {"savings_goals": has_goals, "debt_tracker": has_debts}
+    has_plan = sheets["payoff"] in wb_formulas.sheetnames
+    config["features"] = {"savings_goals": has_goals, "debt_tracker": has_debts, "payoff_plan": has_plan}
+    if has_plan:
+        config["payoff_plan"] = read_payoff_plan(open_reader(wb_formulas, wb_values, sheets["payoff"]), loan_type)
     config["savings_goals"] = read_goals(open_reader(wb_formulas, wb_values, sheets["goals"])) if has_goals else []
     config["debts"] = read_debts(open_reader(wb_formulas, wb_values, sheets["debts"])) if has_debts else []
     bb.validate_config(config)  # fail here, with a clear message, rather than at rebuild time
